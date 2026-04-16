@@ -2,6 +2,7 @@ package statistic
 
 import (
 	"os"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -20,6 +21,7 @@ func init() {
 		uploadTotal:   atomic.NewInt64(0),
 		downloadTotal: atomic.NewInt64(0),
 		pid:           int32(os.Getpid()),
+		closedConns:   make([]ClosedConnection, 0, 100),
 	}
 
 	go DefaultManager.handle()
@@ -35,7 +37,24 @@ type Manager struct {
 	downloadTotal atomic.Int64
 	pid           int32
 	memory        uint64
+
+	// 关闭连接列表（最近 30 秒）
+	closedConns []ClosedConnection
+	closedMu    sync.RWMutex
 }
+
+// ClosedConnection 关闭的连接信息
+type ClosedConnection struct {
+	ID       string    `json:"id"`
+	SourceIP string    `json:"sourceIP"`
+	DestIP   string    `json:"destinationIP"`
+	Upload   int64     `json:"upload"`
+	Download int64     `json:"download"`
+	ClosedAt time.Time `json:"closedAt"`
+}
+
+// 限制关闭连接数量，防止内存泄漏
+const maxClosedConns = 1000
 
 func (m *Manager) Join(c Tracker) {
 	m.connections.Store(c.ID(), c)
@@ -112,12 +131,62 @@ func (m *Manager) ResetStatistic() {
 	m.downloadTotal.Store(0)
 }
 
+// RecordClosedConnection 记录关闭的连接
+func (m *Manager) RecordClosedConnection(conn ClosedConnection) {
+	m.closedMu.Lock()
+	defer m.closedMu.Unlock()
+
+	conn.ClosedAt = time.Now()
+	m.closedConns = append(m.closedConns, conn)
+
+	// 限制数量，防止内存泄漏（保留最近 1000 个）
+	if len(m.closedConns) > maxClosedConns {
+		m.closedConns = m.closedConns[len(m.closedConns)-maxClosedConns:]
+	}
+}
+
+// GetClosedConnections 获取最近关闭的连接
+// 注意：返回的是切片引用，调用方不应修改返回的数据
+func (m *Manager) GetClosedConnections() []ClosedConnection {
+	m.closedMu.RLock()
+	defer m.closedMu.RUnlock()
+
+	// 直接返回引用，避免复制开销
+	// 调用方应该只读，不要修改
+	return m.closedConns
+}
+
 func (m *Manager) handle() {
 	ticker := time.NewTicker(time.Second)
+	cleanupTicker := time.NewTicker(30 * time.Second) // 每 30 秒清理一次过期数据
+	defer cleanupTicker.Stop()
 
-	for range ticker.C {
-		m.uploadBlip.Store(m.uploadTemp.Swap(0))
-		m.downloadBlip.Store(m.downloadTemp.Swap(0))
+	for {
+		select {
+		case <-ticker.C:
+			m.uploadBlip.Store(m.uploadTemp.Swap(0))
+			m.downloadBlip.Store(m.downloadTemp.Swap(0))
+		case <-cleanupTicker.C:
+			m.cleanupClosedConnections() // 定期清理过期数据
+		}
+	}
+}
+
+// cleanupClosedConnections 清理超过 30 秒的关闭连接
+func (m *Manager) cleanupClosedConnections() {
+	m.closedMu.Lock()
+	defer m.closedMu.Unlock()
+
+	cutoff := time.Now().Add(-30 * time.Second)
+	idx := 0
+	for i, c := range m.closedConns {
+		if c.ClosedAt.After(cutoff) {
+			idx = i
+			break
+		}
+	}
+	if idx > 0 {
+		m.closedConns = m.closedConns[idx:]
 	}
 }
 
