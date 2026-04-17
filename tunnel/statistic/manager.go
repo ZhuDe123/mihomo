@@ -54,7 +54,7 @@ type ClosedConnection struct {
 }
 
 // 限制关闭连接数量，防止内存泄漏
-const maxClosedConns = 1000
+const maxClosedConns = 3000
 
 func (m *Manager) Join(c Tracker) {
 	m.connections.Store(c.ID(), c)
@@ -158,7 +158,7 @@ func (m *Manager) GetClosedConnections() []ClosedConnection {
 
 func (m *Manager) handle() {
 	ticker := time.NewTicker(time.Second)
-	cleanupTicker := time.NewTicker(30 * time.Second) // 每 30 秒清理一次过期数据
+	cleanupTicker := time.NewTicker(60 * time.Second) // 每 60 秒清理一次过期数据
 	defer cleanupTicker.Stop()
 
 	for {
@@ -172,12 +172,12 @@ func (m *Manager) handle() {
 	}
 }
 
-// cleanupClosedConnections 清理超过 30 秒的关闭连接
+// cleanupClosedConnections 清理超过 60 秒的关闭连接
 func (m *Manager) cleanupClosedConnections() {
 	m.closedMu.Lock()
 	defer m.closedMu.Unlock()
 
-	cutoff := time.Now().Add(-30 * time.Second)
+	cutoff := time.Now().Add(-60 * time.Second)
 	idx := 0
 	for i, c := range m.closedConns {
 		if c.ClosedAt.After(cutoff) {
