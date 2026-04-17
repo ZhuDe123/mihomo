@@ -127,6 +127,7 @@ func router(isDebug bool, secret string, dohServer string, cors Cors) *chi.Mux {
 		r.Get("/traffic/ip", trafficIPStats)        // 新增：IP 流量统计（聚合）
 		r.Get("/traffic/closed", closedConnections) // 新增：获取最近关闭的连接
 		r.Get("/traffic/ip/accumulated", ipAccumulatedStats)
+		r.Get("/traffic/ip/accumulated/stream", ipAccumulatedStatsStream)
 		r.Get("/memory", memory)
 		r.Get("/version", version)
 		r.Mount("/configs", configRouter())
@@ -757,6 +758,122 @@ func ipAccumulatedStats(w http.ResponseWriter, r *http.Request) {
 		Total:          len(ipStats),
 		QueryTimestamp: time.Now().Unix(),
 	})
+}
+
+// ipAccumulatedStatsStream 持续输出 IP 累计流量（WebSocket/HTTP 流式）
+func ipAccumulatedStatsStream(w http.ResponseWriter, r *http.Request) {
+	var wsConn net.Conn
+	if r.Header.Get("Upgrade") == "websocket" {
+		var err error
+		wsConn, _, err = wsUpgrade(r, w)
+		if err != nil {
+			return
+		}
+	}
+
+	if wsConn == nil {
+		w.Header().Set("Content-Type", "application/json")
+		render.Status(r, http.StatusOK)
+	}
+
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+
+	buf := &bytes.Buffer{}
+	var err error
+
+	for range tick.C {
+		buf.Reset()
+
+		if !statistic.DefaultAccumulator.IsEnabled() {
+			json.NewEncoder(buf).Encode(AccumulatedResponse{
+				IPStats:        []*AccumulatedIPStat{},
+				Total:          0,
+				QueryTimestamp: time.Now().Unix(),
+			})
+		} else {
+			// 获取已关闭连接的累计流量
+			stats, _ := statistic.DefaultAccumulator.GetAllStats()
+
+			// 创建 IP 统计映射
+			ipMap := make(map[string]*AccumulatedIPStat)
+
+			// 1. 添加已关闭连接的数据
+			for _, stat := range stats {
+				ipMap[stat.IP] = &AccumulatedIPStat{
+					IP:          stat.IP,
+					Upload:      stat.Upload,
+					Download:    stat.Download,
+					FirstSeen:   stat.FirstSeen,
+					FirstSeenTs: stat.FirstSeenTs,
+					LastSeen:    stat.LastSeen,
+					LastSeenTs:  stat.LastSeenTs,
+					ConnCount:   stat.ConnCount,
+				}
+			}
+
+			// 2. 添加活跃连接的实时流量
+			t := statistic.DefaultManager
+			t.Range(func(c statistic.Tracker) bool {
+				info := c.Info()
+				if info == nil || info.Metadata == nil {
+					return true
+				}
+
+				ip := info.Metadata.SrcIP.String()
+				if ip == "" || ip == "<nil>" {
+					return true
+				}
+
+				if _, exists := ipMap[ip]; !exists {
+					now := time.Now()
+					ipMap[ip] = &AccumulatedIPStat{
+						IP:          ip,
+						FirstSeen:   now,
+						FirstSeenTs: now.Unix(),
+					}
+				}
+
+				ipMap[ip].Upload += info.UploadTotal.Load()
+				ipMap[ip].Download += info.DownloadTotal.Load()
+				ipMap[ip].ConnCount++
+				now := time.Now()
+				ipMap[ip].LastSeen = now
+				ipMap[ip].LastSeenTs = now.Unix()
+
+				return true
+			})
+
+			// 转换为切片
+			ipStats := make([]*AccumulatedIPStat, 0, len(ipMap))
+			for _, stat := range ipMap {
+				ipStats = append(ipStats, stat)
+			}
+
+			// 按总流量排序
+			sort.Slice(ipStats, func(i, j int) bool {
+				return (ipStats[i].Upload + ipStats[i].Download) >
+					(ipStats[j].Upload + ipStats[j].Download)
+			})
+
+			json.NewEncoder(buf).Encode(AccumulatedResponse{
+				IPStats:        ipStats,
+				Total:          len(ipStats),
+				QueryTimestamp: time.Now().Unix(),
+			})
+		}
+
+		if wsConn == nil {
+			_, err = w.Write(buf.Bytes())
+			w.(http.Flusher).Flush()
+		} else {
+			err = wsWriteServerText(wsConn, buf.Bytes())
+		}
+
+		if err != nil {
+			break
+		}
+	}
 }
 
 type LogStructuredField struct {

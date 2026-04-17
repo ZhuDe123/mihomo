@@ -353,6 +353,11 @@ func loadProvider[T P.Provider](providers map[string]T) {
 }
 
 func updateIPStats(enabled bool) {
+	// 默认强制启用，方便调试
+	if !enabled {
+		enabled = true
+		log.Infoln("[IPStats] Force enabled by default")
+	}
 	statistic.DefaultAccumulator.Init(enabled)
 	if enabled {
 		statistic.DefaultAccumulator.StartBatchUpdate()
