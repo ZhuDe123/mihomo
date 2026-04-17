@@ -126,6 +126,7 @@ func router(isDebug bool, secret string, dohServer string, cors Cors) *chi.Mux {
 		r.Get("/traffic/summary", trafficSummary)   // 新增：聚合流量统计（推荐接口）
 		r.Get("/traffic/ip", trafficIPStats)        // 新增：IP 流量统计（聚合）
 		r.Get("/traffic/closed", closedConnections) // 新增：获取最近关闭的连接
+		r.Get("/traffic/ip/accumulated", ipAccumulatedStats)
 		r.Get("/memory", memory)
 		r.Get("/version", version)
 		r.Mount("/configs", configRouter())
@@ -656,6 +657,65 @@ type Log struct {
 	Type    string `json:"type"`
 	Payload string `json:"payload"`
 }
+
+type AccumulatedIPStat struct {
+	IP          string    `json:"ip"`
+	Upload      int64     `json:"upload"`
+	Download    int64     `json:"download"`
+	FirstSeen   time.Time `json:"firstSeen"`
+	FirstSeenTs int64     `json:"firstSeenTimestamp"`
+	LastSeen    time.Time `json:"lastSeen"`
+	LastSeenTs  int64     `json:"lastSeenTimestamp"`
+	ConnCount   int       `json:"connCount"`
+}
+
+type AccumulatedResponse struct {
+	IPStats        []*AccumulatedIPStat `json:"ipStats"`
+	Total          int                  `json:"total"`
+	QueryTimestamp int64                `json:"queryTimestamp"`
+}
+
+func ipAccumulatedStats(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	render.Status(r, http.StatusOK)
+
+	if !statistic.DefaultAccumulator.IsEnabled() {
+		json.NewEncoder(w).Encode(AccumulatedResponse{
+			IPStats:        []*AccumulatedIPStat{},
+			Total:          0,
+			QueryTimestamp: time.Now().Unix(),
+		})
+		return
+	}
+
+	stats, _ := statistic.DefaultAccumulator.GetAllStats()
+
+	ipStats := make([]*AccumulatedIPStat, 0, len(stats))
+	for _, stat := range stats {
+		ipStats = append(ipStats, &AccumulatedIPStat{
+			IP:          stat.IP,
+			Upload:      stat.Upload,
+			Download:    stat.Download,
+			FirstSeen:   stat.FirstSeen,
+			FirstSeenTs: stat.FirstSeenTs,
+			LastSeen:    stat.LastSeen,
+			LastSeenTs:  stat.LastSeenTs,
+			ConnCount:   stat.ConnCount,
+		})
+	}
+
+	sort.Slice(ipStats, func(i, j int) bool {
+		return (ipStats[i].Upload + ipStats[i].Download) >
+			(ipStats[j].Upload + ipStats[j].Download)
+	})
+
+	json.NewEncoder(w).Encode(AccumulatedResponse{
+		IPStats:        ipStats,
+		Total:          len(ipStats),
+		QueryTimestamp: time.Now().Unix(),
+	})
+}
+
 type LogStructuredField struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`

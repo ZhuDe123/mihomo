@@ -5,6 +5,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/common/buf"
 	N "github.com/metacubex/mihomo/common/net"
@@ -125,6 +126,15 @@ func (tt *tcpTracker) Close() error {
 		})
 	}
 
+	// 记录到持久化累加器
+	if DefaultAccumulator != nil && tt.TrackerInfo != nil && tt.TrackerInfo.Metadata != nil {
+		DefaultAccumulator.AddIPStats(
+			tt.TrackerInfo.Metadata.SrcIP.String(),
+			tt.UploadTotal.Load(),
+			tt.DownloadTotal.Load(),
+		)
+	}
+
 	tt.manager.Leave(tt)
 	return tt.Conn.Close()
 }
@@ -226,6 +236,15 @@ func (ut *udpTracker) Close() error {
 			Upload:   ut.UploadTotal.Load(),
 			Download: ut.DownloadTotal.Load(),
 		})
+	}
+
+	// 记录到持久化累加器
+	if DefaultAccumulator != nil && ut.TrackerInfo != nil && ut.TrackerInfo.Metadata != nil {
+		DefaultAccumulator.AddIPStats(
+			ut.TrackerInfo.Metadata.SrcIP.String(),
+			ut.UploadTotal.Load(),
+			ut.DownloadTotal.Load(),
+		)
 	}
 
 	ut.manager.Leave(ut)

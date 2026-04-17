@@ -41,6 +41,7 @@ import (
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/ntp/ntp"
 	"github.com/metacubex/mihomo/tunnel"
+	"github.com/metacubex/mihomo/tunnel/statistic"
 )
 
 var mux sync.Mutex
@@ -105,6 +106,7 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	updateGeneral(cfg.General, true)
 	updateNTP(cfg.NTP)
 	updateDNS(cfg.DNS, cfg.General.IPv6)
+	updateIPStats(cfg.IPStatsConfig.Enabled)
 	updateListeners(cfg.General, cfg.Listeners, force)
 	updateTun(cfg.General) // tun should not care "force"
 	updateIPTables(cfg)
@@ -348,6 +350,13 @@ func loadProvider[T P.Provider](providers map[string]T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func updateIPStats(enabled bool) {
+	statistic.DefaultAccumulator.Init(enabled)
+	if enabled {
+		statistic.DefaultAccumulator.StartBatchUpdate()
+	}
 }
 
 func updateSniffer(snifferConfig *sniffer.Config) {

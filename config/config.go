@@ -207,6 +207,12 @@ type Config struct {
 	Tunnels       []LC.Tunnel
 	Sniffer       *sniffer.Config
 	TLS           *TLS
+	IPStatsConfig IPStatsConfig `yaml:"ip-stats"`
+}
+
+// IPStatsConfig IP 流量统计配置
+type IPStatsConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 type RawCors struct {
