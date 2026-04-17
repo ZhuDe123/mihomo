@@ -701,7 +701,7 @@ func ipAccumulatedStats(w http.ResponseWriter, r *http.Request) {
 	// 创建 IP 统计映射
 	ipMap := make(map[string]*AccumulatedIPStat)
 
-	// 1. 添加已关闭连接的数据
+	// 添加已关闭连接的数据
 	for _, stat := range stats {
 		ipMap[stat.IP] = &AccumulatedIPStat{
 			IP:          stat.IP,
@@ -714,37 +714,6 @@ func ipAccumulatedStats(w http.ResponseWriter, r *http.Request) {
 			ConnCount:   stat.ConnCount,
 		}
 	}
-
-	// 2. 添加活跃连接的实时流量
-	t.Range(func(c statistic.Tracker) bool {
-		info := c.Info()
-		if info == nil || info.Metadata == nil {
-			return true
-		}
-
-		ip := info.Metadata.SrcIP.String()
-		if ip == "" || ip == "<nil>" {
-			return true
-		}
-
-		if _, exists := ipMap[ip]; !exists {
-			now := time.Now()
-			ipMap[ip] = &AccumulatedIPStat{
-				IP:          ip,
-				FirstSeen:   now,
-				FirstSeenTs: now.Unix(),
-			}
-		}
-
-		ipMap[ip].Upload += info.UploadTotal.Load()
-		ipMap[ip].Download += info.DownloadTotal.Load()
-		ipMap[ip].ConnCount++
-		now := time.Now()
-		ipMap[ip].LastSeen = now
-		ipMap[ip].LastSeenTs = now.Unix()
-
-		return true
-	})
 
 	// 转换为切片
 	ipStats := make([]*AccumulatedIPStat, 0, len(ipMap))
@@ -810,7 +779,7 @@ func ipAccumulatedStatsStream(w http.ResponseWriter, r *http.Request) {
 			// 创建 IP 统计映射
 			ipMap := make(map[string]*AccumulatedIPStat)
 
-			// 1. 添加已关闭连接的数据
+			// 添加已关闭连接的数据
 			for _, stat := range stats {
 				ipMap[stat.IP] = &AccumulatedIPStat{
 					IP:          stat.IP,
@@ -823,37 +792,6 @@ func ipAccumulatedStatsStream(w http.ResponseWriter, r *http.Request) {
 					ConnCount:   stat.ConnCount,
 				}
 			}
-
-			// 2. 添加活跃连接的实时流量
-			t.Range(func(c statistic.Tracker) bool {
-				info := c.Info()
-				if info == nil || info.Metadata == nil {
-					return true
-				}
-
-				ip := info.Metadata.SrcIP.String()
-				if ip == "" || ip == "<nil>" {
-					return true
-				}
-
-				if _, exists := ipMap[ip]; !exists {
-					now := time.Now()
-					ipMap[ip] = &AccumulatedIPStat{
-						IP:          ip,
-						FirstSeen:   now,
-						FirstSeenTs: now.Unix(),
-					}
-				}
-
-				ipMap[ip].Upload += info.UploadTotal.Load()
-				ipMap[ip].Download += info.DownloadTotal.Load()
-				ipMap[ip].ConnCount++
-				now := time.Now()
-				ipMap[ip].LastSeen = now
-				ipMap[ip].LastSeenTs = now.Unix()
-
-				return true
-			})
 
 			// 转换为切片
 			ipStats := make([]*AccumulatedIPStat, 0, len(ipMap))
