@@ -356,6 +356,9 @@ func updateIPStats(enabled bool) {
 	statistic.DefaultAccumulator.Init(enabled)
 	if enabled {
 		statistic.DefaultAccumulator.StartBatchUpdate()
+		log.Infoln("[IPStats] Accumulator enabled")
+	} else {
+		log.Infoln("[IPStats] Accumulator disabled")
 	}
 }
 

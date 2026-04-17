@@ -688,11 +688,15 @@ func ipAccumulatedStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 获取已关闭连接的累计流量
 	stats, _ := statistic.DefaultAccumulator.GetAllStats()
 
-	ipStats := make([]*AccumulatedIPStat, 0, len(stats))
+	// 创建 IP 统计映射
+	ipMap := make(map[string]*AccumulatedIPStat)
+
+	// 1. 添加已关闭连接的数据
 	for _, stat := range stats {
-		ipStats = append(ipStats, &AccumulatedIPStat{
+		ipMap[stat.IP] = &AccumulatedIPStat{
 			IP:          stat.IP,
 			Upload:      stat.Upload,
 			Download:    stat.Download,
@@ -701,9 +705,48 @@ func ipAccumulatedStats(w http.ResponseWriter, r *http.Request) {
 			LastSeen:    stat.LastSeen,
 			LastSeenTs:  stat.LastSeenTs,
 			ConnCount:   stat.ConnCount,
-		})
+		}
 	}
 
+	// 2. 添加活跃连接的实时流量
+	t := statistic.DefaultManager
+	t.Range(func(c statistic.Tracker) bool {
+		info := c.Info()
+		if info == nil || info.Metadata == nil {
+			return true
+		}
+
+		ip := info.Metadata.SrcIP.String()
+		if ip == "" || ip == "<nil>" {
+			return true
+		}
+
+		if _, exists := ipMap[ip]; !exists {
+			now := time.Now()
+			ipMap[ip] = &AccumulatedIPStat{
+				IP:          ip,
+				FirstSeen:   now,
+				FirstSeenTs: now.Unix(),
+			}
+		}
+
+		ipMap[ip].Upload += info.UploadTotal.Load()
+		ipMap[ip].Download += info.DownloadTotal.Load()
+		ipMap[ip].ConnCount++
+		now := time.Now()
+		ipMap[ip].LastSeen = now
+		ipMap[ip].LastSeenTs = now.Unix()
+
+		return true
+	})
+
+	// 转换为切片
+	ipStats := make([]*AccumulatedIPStat, 0, len(ipMap))
+	for _, stat := range ipMap {
+		ipStats = append(ipStats, stat)
+	}
+
+	// 按总流量排序
 	sort.Slice(ipStats, func(i, j int) bool {
 		return (ipStats[i].Upload + ipStats[i].Download) >
 			(ipStats[j].Upload + ipStats[j].Download)
