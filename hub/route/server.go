@@ -671,6 +671,8 @@ type AccumulatedIPStat struct {
 }
 
 type AccumulatedResponse struct {
+	UpTotal        int64                `json:"upTotal"`
+	DownTotal      int64                `json:"downTotal"`
 	IPStats        []*AccumulatedIPStat `json:"ipStats"`
 	Total          int                  `json:"total"`
 	QueryTimestamp int64                `json:"queryTimestamp"`
@@ -692,6 +694,10 @@ func ipAccumulatedStats(w http.ResponseWriter, r *http.Request) {
 	// 获取已关闭连接的累计流量
 	stats, _ := statistic.DefaultAccumulator.GetAllStats()
 
+	// 获取全局总流量
+	t := statistic.DefaultManager
+	upTotal, downTotal := t.Total()
+
 	// 创建 IP 统计映射
 	ipMap := make(map[string]*AccumulatedIPStat)
 
@@ -710,7 +716,6 @@ func ipAccumulatedStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. 添加活跃连接的实时流量
-	t := statistic.DefaultManager
 	t.Range(func(c statistic.Tracker) bool {
 		info := c.Info()
 		if info == nil || info.Metadata == nil {
@@ -754,6 +759,8 @@ func ipAccumulatedStats(w http.ResponseWriter, r *http.Request) {
 	})
 
 	json.NewEncoder(w).Encode(AccumulatedResponse{
+		UpTotal:        upTotal,
+		DownTotal:      downTotal,
 		IPStats:        ipStats,
 		Total:          len(ipStats),
 		QueryTimestamp: time.Now().Unix(),
@@ -787,11 +794,16 @@ func ipAccumulatedStatsStream(w http.ResponseWriter, r *http.Request) {
 
 		if !statistic.DefaultAccumulator.IsEnabled() {
 			json.NewEncoder(buf).Encode(AccumulatedResponse{
+				UpTotal:        0,
+				DownTotal:      0,
 				IPStats:        []*AccumulatedIPStat{},
 				Total:          0,
 				QueryTimestamp: time.Now().Unix(),
 			})
 		} else {
+			// 获取全局总流量
+			t := statistic.DefaultManager
+			upTotal, downTotal := t.Total()
 			// 获取已关闭连接的累计流量
 			stats, _ := statistic.DefaultAccumulator.GetAllStats()
 
@@ -813,7 +825,6 @@ func ipAccumulatedStatsStream(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// 2. 添加活跃连接的实时流量
-			t := statistic.DefaultManager
 			t.Range(func(c statistic.Tracker) bool {
 				info := c.Info()
 				if info == nil || info.Metadata == nil {
@@ -857,6 +868,8 @@ func ipAccumulatedStatsStream(w http.ResponseWriter, r *http.Request) {
 			})
 
 			json.NewEncoder(buf).Encode(AccumulatedResponse{
+				UpTotal:        upTotal,
+				DownTotal:      downTotal,
 				IPStats:        ipStats,
 				Total:          len(ipStats),
 				QueryTimestamp: time.Now().Unix(),
