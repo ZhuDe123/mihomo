@@ -20,14 +20,6 @@ type Tracker interface {
 	C.Connection
 }
 
-// IPStat IP 流量统计
-type IPStat struct {
-	IP          string `json:"ip"`
-	Upload      int64  `json:"upload"`
-	Download    int64  `json:"download"`
-	Connections int    `json:"connections"`
-}
-
 type TrackerInfo struct {
 	UUID          uuid.UUID    `json:"id"`
 	Metadata      *C.Metadata  `json:"metadata"`
@@ -115,17 +107,6 @@ func (tt *tcpTracker) UnwrapWriter() (io.Writer, []N.CountFunc) {
 }
 
 func (tt *tcpTracker) Close() error {
-	// 记录关闭的连接信息
-	if tt.manager != nil && tt.TrackerInfo != nil {
-		tt.manager.RecordClosedConnection(ClosedConnection{
-			ID:       tt.UUID.String(),
-			SourceIP: tt.TrackerInfo.Metadata.SrcIP.String(),
-			DestIP:   tt.TrackerInfo.Metadata.DstIP.String(),
-			Upload:   tt.UploadTotal.Load(),
-			Download: tt.DownloadTotal.Load(),
-		})
-	}
-
 	// 记录到持久化累加器
 	if DefaultAccumulator != nil && tt.TrackerInfo != nil && tt.TrackerInfo.Metadata != nil {
 		DefaultAccumulator.AddIPStats(
@@ -227,17 +208,6 @@ func (ut *udpTracker) WriteTo(b []byte, addr net.Addr) (int, error) {
 }
 
 func (ut *udpTracker) Close() error {
-	// 记录关闭的连接信息
-	if ut.manager != nil && ut.TrackerInfo != nil {
-		ut.manager.RecordClosedConnection(ClosedConnection{
-			ID:       ut.UUID.String(),
-			SourceIP: ut.TrackerInfo.Metadata.SrcIP.String(),
-			DestIP:   ut.TrackerInfo.Metadata.DstIP.String(),
-			Upload:   ut.UploadTotal.Load(),
-			Download: ut.DownloadTotal.Load(),
-		})
-	}
-
 	// 记录到持久化累加器
 	if DefaultAccumulator != nil && ut.TrackerInfo != nil && ut.TrackerInfo.Metadata != nil {
 		DefaultAccumulator.AddIPStats(
