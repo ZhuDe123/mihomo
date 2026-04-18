@@ -108,12 +108,14 @@ func (tt *tcpTracker) UnwrapWriter() (io.Writer, []N.CountFunc) {
 
 func (tt *tcpTracker) Close() error {
 	// 记录到持久化累加器
-	if DefaultAccumulator != nil && tt.TrackerInfo != nil && tt.TrackerInfo.Metadata != nil {
-		DefaultAccumulator.AddIPStats(
-			tt.TrackerInfo.Metadata.SrcIP.String(),
-			tt.UploadTotal.Load(),
-			tt.DownloadTotal.Load(),
-		)
+	if tt.pushToManager {
+		if DefaultAccumulator != nil && tt.TrackerInfo != nil && tt.TrackerInfo.Metadata != nil {
+			DefaultAccumulator.AddIPStats(
+				tt.TrackerInfo.Metadata.SrcIP.String(),
+				tt.UploadTotal.Load(),
+				tt.DownloadTotal.Load(),
+			)
+		}
 	}
 
 	tt.manager.Leave(tt)
@@ -209,12 +211,14 @@ func (ut *udpTracker) WriteTo(b []byte, addr net.Addr) (int, error) {
 
 func (ut *udpTracker) Close() error {
 	// 记录到持久化累加器
-	if DefaultAccumulator != nil && ut.TrackerInfo != nil && ut.TrackerInfo.Metadata != nil {
-		DefaultAccumulator.AddIPStats(
-			ut.TrackerInfo.Metadata.SrcIP.String(),
-			ut.UploadTotal.Load(),
-			ut.DownloadTotal.Load(),
-		)
+	if ut.pushToManager {
+		if DefaultAccumulator != nil && ut.TrackerInfo != nil && ut.TrackerInfo.Metadata != nil {
+			DefaultAccumulator.AddIPStats(
+				ut.TrackerInfo.Metadata.SrcIP.String(),
+				ut.UploadTotal.Load(),
+				ut.DownloadTotal.Load(),
+			)
+		}
 	}
 
 	ut.manager.Leave(ut)
