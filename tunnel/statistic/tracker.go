@@ -107,8 +107,8 @@ func (tt *tcpTracker) UnwrapWriter() (io.Writer, []N.CountFunc) {
 }
 
 func (tt *tcpTracker) Close() error {
-	// 记录到持久化累加器
-	if tt.pushToManager {
+	// 记录到持久化累加器，只有第一次调用 Leave 成功时才进行统计，防止重复 Close 导致的数据翻倍
+	if tt.pushToManager && tt.manager.Leave(tt) {
 		if DefaultAccumulator != nil && tt.TrackerInfo != nil && tt.TrackerInfo.Metadata != nil {
 			DefaultAccumulator.AddIPStats(
 				tt.TrackerInfo.Metadata.SrcIP.String(),
@@ -116,9 +116,10 @@ func (tt *tcpTracker) Close() error {
 				tt.DownloadTotal.Load(),
 			)
 		}
+	} else if !tt.pushToManager {
+		// 如果不需要推送到 Manager，直接调用 Leave 清理连接
+		tt.manager.Leave(tt)
 	}
-
-	tt.manager.Leave(tt)
 	return tt.Conn.Close()
 }
 
@@ -210,8 +211,8 @@ func (ut *udpTracker) WriteTo(b []byte, addr net.Addr) (int, error) {
 }
 
 func (ut *udpTracker) Close() error {
-	// 记录到持久化累加器
-	if ut.pushToManager {
+	// 记录到持久化累加器，只有第一次调用 Leave 成功时才进行统计，防止重复 Close 导致的数据翻倍
+	if ut.pushToManager && ut.manager.Leave(ut) {
 		if DefaultAccumulator != nil && ut.TrackerInfo != nil && ut.TrackerInfo.Metadata != nil {
 			DefaultAccumulator.AddIPStats(
 				ut.TrackerInfo.Metadata.SrcIP.String(),
@@ -219,9 +220,10 @@ func (ut *udpTracker) Close() error {
 				ut.DownloadTotal.Load(),
 			)
 		}
+	} else if !ut.pushToManager {
+		// 如果不需要推送到 Manager，直接调用 Leave 清理连接
+		ut.manager.Leave(ut)
 	}
-
-	ut.manager.Leave(ut)
 	return ut.PacketConn.Close()
 }
 

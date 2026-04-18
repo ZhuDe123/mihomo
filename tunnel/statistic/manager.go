@@ -41,8 +41,9 @@ func (m *Manager) Join(c Tracker) {
 	m.connections.Store(c.ID(), c)
 }
 
-func (m *Manager) Leave(c Tracker) {
-	m.connections.Delete(c.ID())
+func (m *Manager) Leave(c Tracker) bool {
+	_, loaded := m.connections.LoadAndDelete(c.ID())
+	return loaded
 }
 
 func (m *Manager) Get(id string) (c Tracker) {
